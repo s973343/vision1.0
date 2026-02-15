@@ -232,12 +232,42 @@ def _candidate_video_names(entry):
     video_id = _video_id_from_entry(entry)
     candidates = []
     if video_id:
-        candidates.append(f"v_{video_id}.mp4")
         candidates.append(f"{video_id}.mp4")
+        candidates.append(f"v_{video_id}.mp4")
     raw_path = str(entry.get("video_path") or entry.get("video") or "").strip()
     if raw_path:
         candidates.append(os.path.basename(raw_path.replace("\\", "/")))
     return list(dict.fromkeys(candidates))
+
+
+def _canonical_video_filename(entry, fallback_path):
+    video_id = _video_id_from_entry(entry)
+    if video_id:
+        return f"{video_id}.mp4"
+
+    base = os.path.basename(str(fallback_path or "").replace("\\", "/"))
+    stem, ext = os.path.splitext(base)
+    ext = ext or ".mp4"
+    if stem.startswith("v_"):
+        stem = stem[2:]
+    return f"{stem}{ext}" if stem else base
+
+
+def _ensure_canonical_video_alias(source_video_path, canonical_filename):
+    if not source_video_path:
+        return source_video_path
+
+    source_abs = os.path.abspath(source_video_path)
+    source_base = os.path.basename(source_abs)
+    if canonical_filename and source_base == canonical_filename:
+        return source_abs
+
+    alias_dir = os.path.join("data", "video_aliases", "activitynetqa")
+    os.makedirs(alias_dir, exist_ok=True)
+    alias_path = os.path.abspath(os.path.join(alias_dir, canonical_filename))
+    if not os.path.exists(alias_path):
+        shutil.copyfile(source_abs, alias_path)
+    return alias_path
 
 
 def extract_query_text(entry):
@@ -311,6 +341,9 @@ def main_cli():
                 print(f"[{global_index}] Missing video for: {candidate_names}")
                 global_index += 1
                 continue
+
+            canonical_filename = _canonical_video_filename(entry, video_path)
+            video_path = _ensure_canonical_video_alias(video_path, canonical_filename)
 
             question_id = str(entry.get("question_id") or "").strip()
             entry_id = question_id or os.path.splitext(os.path.basename(video_path))[0]
